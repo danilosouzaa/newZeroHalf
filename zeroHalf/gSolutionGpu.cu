@@ -245,18 +245,66 @@ __global__ void runGPUR1_aleatory(Cut_gpu *d_cut, solutionGpu *d_solution, unsig
     }
 }
 
-__global__ void runGPU_zeroHalf(Cut_gpu *d_cut, listNeigh *d_list, int  *d_Solution, int szPerThreads,int nThreads){
-        int term = threadIdx.x + blockIdx.x*nThreads;
+__global__ void runGPU_zeroHalf(Cut_gpu *d_cut, listNeigh *d_list, int  *d_Solution, int szPerThreads,int nThreads, int precision)
+{
+    int term = threadIdx.x + blockIdx.x*nThreads;
 
-        int i, cont = 0, c1, c2;
-        int *Coef = (int*)malloc(sizeof(int)*(d_cut->numberVariables));
-        int violation = 0 , violation_best = 0,c1_best = -1,c2_best = -1;
-        for(i = term*szPerThreads; i < (term + 1)*szPerThreads;i++){
-            c1 = d_list->list_n[i];
+    int i,j, cont = 0, c1, c2,el,rhs = 0, aux, value_tes;
+    int *Coef = (int*)malloc(sizeof(int)*(d_cut->numberVariables));
+    int violation = 0, c1_best = -1,c2_best = -1;
+    for(i = term*szPerThreads; i < (term + 1)*szPerThreads; i++)
+    {
+        memset(Coef,0,sizeof(int)*d_cut->numberVariables);
+        rhs = 0;
+        if(i >= d_list->nList )
+        {
+            break;
+        }
+        c1 = d_list->list_n[i];
+        for(j = 0 ; j < d_list->nPos-1; j++)
+        {
+            if(i< d_list->pos[j+1])
+            {
+                c2 = j;
+                break;
+            }
         }
         __syncthreads();
-        free(Coef);
-        //printf("%d: %d\n",blockIdx.x, szPerThreads);
+        for(j = d_cut->ElementsConstraints[ c1 ]; j<d_cut->ElementsConstraints[ c1+ 1]; j++)
+        {
+
+            el = d_cut->Elements[j];
+            Coef[el] += d_cut->Coefficients[j];
+        }
+        rhs += d_cut->rightSide[c1];
+
+        for(j = d_cut->ElementsConstraints[ c2 ]; j<d_cut->ElementsConstraints[ c2+ 1]; j++)
+        {
+
+            el = d_cut->Elements[j];
+            Coef[el] += d_cut->Coefficients[j];
+        }
+        rhs += d_cut->rightSide[c2];
+        for(j=0; j<d_cut->numberVariables; j++)
+        {
+            aux = Coef[j]<0 ? Coef[j]/2 - 1 : Coef[j]/2;
+            value_tes += aux*d_cut->xAsterisc[j];
+        }
+        aux = rhs<0 ? rhs/2-1 : rhs/2;
+        if((value_tes>aux*precision)&&(value_tes-(aux*precision)>violation))
+        {
+            violation = value_tes-(aux*precision);
+            c1_best = c1;
+            c2_best = c2;
+        }
+
+        //printf("%d %d\n ", c1,c2);
+    }
+    __syncthreads();
+    d_Solution[term*2] = c1_best;
+    d_Solution[term*2+1] = c2_best;
+    free(Coef);
+    //printf("%d: %d\n",blockIdx.x, szPerThreads);
 }
 
 __global__ void runGPUR2(Cut_gpu *d_cut, solutionGpu *d_solution, unsigned int *seed, curandState_t* states, int numberMaxConst, int setConstraint[],int nThreads, int precision, int maxDenominator, int nRuns)
@@ -264,7 +312,7 @@ __global__ void runGPUR2(Cut_gpu *d_cut, solutionGpu *d_solution, unsigned int *
     int term = threadIdx.x + blockIdx.x*nThreads;
     if(term<nRuns)
     {
-       // printf("%d: %d %d %d %d\n",term, setConstraint[term*numberMaxConst + 0],setConstraint[term*numberMaxConst + 1],setConstraint[term*numberMaxConst + 2],setConstraint[term*numberMaxConst + 3]);
+        // printf("%d: %d %d %d %d\n",term, setConstraint[term*numberMaxConst + 0],setConstraint[term*numberMaxConst + 1],setConstraint[term*numberMaxConst + 2],setConstraint[term*numberMaxConst + 3]);
         int mult_1, mult_2, rest_a,rest_b, i, j, el, rhs1, rhs2, value_tes, violation = 0, aux, n1_best = -1, n2_best = -1, d1_best = -1, qnt_1, d2_best=-1;//, cont=0;
         curand_init(seed[term],term,0,&states[term]);
         int Numerator[20];

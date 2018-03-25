@@ -434,10 +434,10 @@ int contPar(Cut_gpu* h_cut)
     return cont;
 }
 
-Cut_gpu* phase_zeroHalf(Cut_gpu *h_cut, Cut_gpu_aux *cut_aux,int nConstraintsPerSet)
+Cut_gpu* phase_zeroHalf(Cut_gpu *h_cut, Cut_gpu_aux *cut_aux,int nConstraintsPerSet, int precision)
 {
     //char *matrixNeighborhood;
-    int i,j;
+    int i,j, n_cuts = 0;
     int szPar = contPar(h_cut);
     int szImpar = h_cut->numberConstrains -szPar;
     //int *vPar = (int*)malloc(sizeof(int)*szPar);
@@ -476,7 +476,7 @@ Cut_gpu* phase_zeroHalf(Cut_gpu *h_cut, Cut_gpu_aux *cut_aux,int nConstraintsPer
         cudaMalloc((void**)&d_solution_zero, sizeof(int)*nConstraintsPerSet*nBlocks*nThreads);
         Cut_gpu *d_cut = createGPUcut(h_cut, h_cut->numberVariables, h_cut->numberConstrains);
         listNeigh *d_list = createGPUlist(zero_list);
-        runGPU_zeroHalf<<<nBlocks,nThreads>>>(d_cut, d_list, d_solution_zero, szPerThreads,nThreads);
+        runGPU_zeroHalf<<<nBlocks,nThreads>>>(d_cut, d_list, d_solution_zero, szPerThreads,nThreads,precision);
         gpuDeviceSynchronize();
 
 
@@ -490,10 +490,12 @@ Cut_gpu* phase_zeroHalf(Cut_gpu *h_cut, Cut_gpu_aux *cut_aux,int nConstraintsPer
         gpuMemcpy(h_solution_zero, d_solution_zero, sizeof(int)*nConstraintsPerSet*nBlocks*nThreads, cudaMemcpyDeviceToHost);
 
 
-        //for(i = 0; i< nConstraintsPerSet*nBlocks*nThreads;i++){
-        //    printf("%d\n", h_solution_zero[i]);
-        //}
-
+        for(i = 0; i< nBlocks*nThreads;i++){
+            if(h_solution_zero[i*2]!=-1){
+                n_cuts++;
+            }
+        }
+        printf("Num cuts zeroHalf: %d\n", n_cuts);
         gpuFree(d_cut);
         gpuFree(d_solution_zero);
         gpuFree(d_list);
@@ -572,6 +574,7 @@ listNeigh *returnListNeighborhood (Cut_gpu *h_cut)
             if((matrixNeighborhood[i+j*h_cut->numberConstrains] == 1)&&(h_cut->rightSide[i]%2 != h_cut->rightSide[j]%2))
             {
                 list_t->list_n[cont_temp] = j;
+                //printf("antes: %d %d \n",i,j);
                 cont_temp++;
             }
         }
