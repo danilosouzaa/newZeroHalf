@@ -43,6 +43,7 @@ Cut_gpu* createGPUcut(const Cut_gpu* h_cut, int nVariables, int nConstrains){
 
 }
 
+
 listNeigh *createGPUlist(const listNeigh* list_t){
     size_t size_list = sizeof(listNeigh) +
                         sizeof(TList)*(list_t->nList) +

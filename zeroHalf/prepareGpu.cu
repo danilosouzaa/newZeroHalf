@@ -440,25 +440,69 @@ Cut_gpu* phase_zeroHalf(Cut_gpu *h_cut, Cut_gpu_aux *cut_aux,int nConstraintsPer
     int i,j;
     int szPar = contPar(h_cut);
     int szImpar = h_cut->numberConstrains -szPar;
-    int *vPar = (int*)malloc(sizeof(int)*szPar);
-    int *vImpar = (int*)malloc(sizeof(int)*(szImpar));
+    //int *vPar = (int*)malloc(sizeof(int)*szPar);
+    //int *vImpar = (int*)malloc(sizeof(int)*(szImpar));
     //matrixNeighborhood = returnMatrixNeighborhood(h_cut);
-
-    fillParImpar(vPar,vImpar,h_cut);
+    //fillParImpar(vPar,vImpar,h_cut);
+    listNeigh *zero_list;
+    zero_list = returnListNeighborhood(h_cut);
     int nBlocks, nThreads;
     nBlocks = 10;
-    nThreads =  szPar/nBlocks;
+    nThreads =  50;//szPar/nBlocks;
     int deviceCuda;
     deviceCuda = verifyGpu();
+//    for(i=0;i< zero_list->nPos-1;i++){
+//            for(j=zero_list->pos[i];j<zero_list->pos[i+1];j++){
+//                printf("Restrição %d com %d\n",i,zero_list->list_n[j]);
+//            }
+//    }
+//    printf("Size pos: %d\n", zero_list->nPos);
+    int szPerThreads = zero_list->nList/(nBlocks*nThreads) + 1;
     if(deviceCuda>0)
     {
-        int *h_solution_r2 = (int*)malloc(sizeof(int)*nConstraintsPerSet*nBlocks*nThreads);
+         size_t size_cut = sizeof(Cut_gpu) +
+                          sizeof(TCoefficients)*(h_cut->cont) +
+                          sizeof(TElements)*(h_cut->cont) +
+                          sizeof(TElementsConstraints)*(h_cut->numberConstrains+1) +
+                          sizeof(TRightSide)*(h_cut->numberConstrains) +
+                          sizeof(TXAsterisc)*(h_cut->numberVariables) +
+                          sizeof(TTypeConstraints)*(h_cut->numberConstrains);
+        size_t size_list = sizeof(listNeigh) +
+                        sizeof(TList)*(zero_list->nList) +
+                        sizeof(TPosList)*(zero_list->nPos) ;
 
-        free(h_solution_r2);
+        int *h_solution_zero = (int*)malloc(sizeof(int)*nConstraintsPerSet*nBlocks*nThreads);
+        int *d_solution_zero ;
+        cudaMalloc((void**)&d_solution_zero, sizeof(int)*nConstraintsPerSet*nBlocks*nThreads);
+        Cut_gpu *d_cut = createGPUcut(h_cut, h_cut->numberVariables, h_cut->numberConstrains);
+        listNeigh *d_list = createGPUlist(zero_list);
+        runGPU_zeroHalf<<<nBlocks,nThreads>>>(d_cut, d_list, d_solution_zero, szPerThreads,nThreads);
+        gpuDeviceSynchronize();
+
+
+        gpuMemcpy(h_cut, d_cut, size_cut, cudaMemcpyDeviceToHost);
+        h_cut->Coefficients = (TCoefficients*)(h_cut + 1);
+        h_cut->Elements = (TElements*)(h_cut->Coefficients + (h_cut->cont));
+        h_cut->ElementsConstraints = (TElementsConstraints*)(h_cut->Elements + (h_cut->cont));
+        h_cut->rightSide = (TRightSide*)(h_cut->ElementsConstraints+ (h_cut->numberConstrains+1));
+        h_cut->xAsterisc = (TXAsterisc*)(h_cut->rightSide + (h_cut->numberConstrains));
+        h_cut->typeConstraints = (TTypeConstraints*)(h_cut->xAsterisc+ (h_cut->numberVariables));
+        gpuMemcpy(h_solution_zero, d_solution_zero, sizeof(int)*nConstraintsPerSet*nBlocks*nThreads, cudaMemcpyDeviceToHost);
+
+
+        //for(i = 0; i< nConstraintsPerSet*nBlocks*nThreads;i++){
+        //    printf("%d\n", h_solution_zero[i]);
+        //}
+
+        gpuFree(d_cut);
+        gpuFree(d_solution_zero);
+        gpuFree(d_list);
+        free(h_solution_zero);
+
     }
 
-    free(vImpar);
-    free(vPar);
+//    free(vImpar);
+//    free(vPar);
     //free(matrixNeighborhood);
     return h_cut;
 
@@ -483,7 +527,7 @@ void fillParImpar(int *vPar,int *vImpar, Cut_gpu *h_cut)
 }
 
 
-listNeigh *returnMatrixNeighborhood (Cut_gpu *h_cut)
+listNeigh *returnListNeighborhood (Cut_gpu *h_cut)
 {
     char *matrixNeighborhood = (char*)malloc(sizeof(char)*h_cut->numberConstrains*h_cut->numberConstrains);
     int *m1 = (int*)malloc(sizeof(int)*h_cut->numberConstrains*h_cut->numberVariables);
@@ -507,12 +551,15 @@ listNeigh *returnMatrixNeighborhood (Cut_gpu *h_cut)
                 if((i!=j)&&( ((m1[k + i*h_cut->numberVariables]>0)&&(m1[k + j*h_cut->numberVariables]>0)) || ((m1[k + i*h_cut->numberVariables]<0)&&(m1[k + j*h_cut->numberVariables]<0)) ) )
                 {
                     matrixNeighborhood[i+j*h_cut->numberConstrains] = 1;
-                    cont_temp++;
+                    if((j>i)&&(h_cut->rightSide[i]%2 != h_cut->rightSide[j]%2)){
+                        cont_temp++;
+                    }
                     break;
                 }
             }
         }
     }
+
     listNeigh *list_t = AllocationListNeigh(h_cut->numberConstrains,cont_temp);
     //int *novaLista = (int*)malloc(sizeof(int)*cont_temp);
     //int *pos = (int*)malloc(sizeof(int)*h_cut->numberConstrains+1);
@@ -520,9 +567,9 @@ listNeigh *returnMatrixNeighborhood (Cut_gpu *h_cut)
     list_t->pos[0] = 1;
     for(i=0; i<h_cut->numberConstrains; i++)
     {
-        for(j=0; j<h_cut->numberConstrains; j++)
+        for(j=i+1; j<h_cut->numberConstrains; j++)
         {
-            if(matrixNeighborhood[i+j*h_cut->numberConstrains] == 1)
+            if((matrixNeighborhood[i+j*h_cut->numberConstrains] == 1)&&(h_cut->rightSide[i]%2 != h_cut->rightSide[j]%2))
             {
                 list_t->list_n[cont_temp] = j;
                 cont_temp++;
@@ -532,7 +579,6 @@ listNeigh *returnMatrixNeighborhood (Cut_gpu *h_cut)
     }
 
     free(m1);
-
     free(matrixNeighborhood);
     return list_t;
 }

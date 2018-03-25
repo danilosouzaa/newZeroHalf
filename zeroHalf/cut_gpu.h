@@ -72,7 +72,7 @@ Cut_gpu* readFile(char *fileName, int precision ,Cut_gpu_aux *cut_aux);
 
 Cut_gpu* createGPUcut(const Cut_gpu* h_cut, int nVariables, int nConstrains);
 
-listNeigh *createGPUlist(const listNeigh* list_t, int nConstrains, int nList);
+listNeigh *createGPUlist(const listNeigh* list_t);
 
 int returnIndVector(TNames *v,char *nome, int sz);
 

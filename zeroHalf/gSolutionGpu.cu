@@ -245,7 +245,19 @@ __global__ void runGPUR1_aleatory(Cut_gpu *d_cut, solutionGpu *d_solution, unsig
     }
 }
 
+__global__ void runGPU_zeroHalf(Cut_gpu *d_cut, listNeigh *d_list, int  *d_Solution, int szPerThreads,int nThreads){
+        int term = threadIdx.x + blockIdx.x*nThreads;
 
+        int i, cont = 0, c1, c2;
+        int *Coef = (int*)malloc(sizeof(int)*(d_cut->numberVariables));
+        int violation = 0 , violation_best = 0,c1_best = -1,c2_best = -1;
+        for(i = term*szPerThreads; i < (term + 1)*szPerThreads;i++){
+            c1 = d_list->list_n[i];
+        }
+        __syncthreads();
+        free(Coef);
+        //printf("%d: %d\n",blockIdx.x, szPerThreads);
+}
 
 __global__ void runGPUR2(Cut_gpu *d_cut, solutionGpu *d_solution, unsigned int *seed, curandState_t* states, int numberMaxConst, int setConstraint[],int nThreads, int precision, int maxDenominator, int nRuns)
 {

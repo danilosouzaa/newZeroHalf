@@ -39,7 +39,8 @@ int main(int argc, char *argv[])
     int type = atoi(argv[6]);
     int szR = atoi(argv[7]);
 
-    if(szR>maxContraints){
+    if(szR>maxContraints)
+    {
         printf("Param erro: size R \n");
         return 0;
     }
@@ -73,71 +74,76 @@ int main(int argc, char *argv[])
     contr1 = 0;
     int x=0;
 
-#ifdef __NVCC__
-        printf("GPU\n");
-        int nBlocks;
-        int pos_R1 = 0;
-        int nThreads;
-        int nRepeat = 1;
-        int nRuns_temp,i;
-        //int cont_run = 0;
-        float aux;
-        if(nRuns<5000){
-		returnDimension(&nBlocks, &nThreads, nRuns);
-	}else{
-		returnDimension(&nBlocks, &nThreads, 5000);
-	}
-        printf("nThreads: %d , nBlocks: %d \n", nThreads, nBlocks);
-        n_cuts= ccg->numberConstrains;
-        //printf("antes: %d\n",ccg->numberConstrains);
-        ccg = initial_runGPU(ccg, ccg_aux, maxContraints,maxDenominator,p,type,nThreads,nBlocks);
-        //printf("depois fase 1: %d\n",ccg->numberConstrains);
-        if(n_cuts!=ccg->numberConstrains)
-            ccg_aux = reallocCut(ccg,ccg_aux, &contr1);
-        n_cuts = ccg->numberConstrains;
 
-        if(nRuns < 0.7*(nBlocks*nThreads)){
-            nThreads = (nRuns/nBlocks) ;
-        }else{
-            aux = (float)(nRuns - 0.7*(nThreads*nBlocks))/(float)(0.7*(nThreads*nBlocks));
-            nRepeat += ceil(aux);
-            nThreads = (0.7*(nThreads*nBlocks))/nBlocks;
+    printf("GPU\n");
+    int nBlocks;
+    int pos_R1 = 0;
+    int nThreads;
+    int nRepeat = 1;
+    int nRuns_temp,i;
+    float aux;
+    if(nRuns<5000)
+    {
+        returnDimension(&nBlocks, &nThreads, nRuns);
+    }
+    else
+    {
+        returnDimension(&nBlocks, &nThreads, 5000);
+    }
+    printf("nThreads: %d , nBlocks: %d \n", nThreads, nBlocks);
+    n_cuts= ccg->numberConstrains;
+    //printf("antes: %d\n",ccg->numberConstrains);
+    ccg= phase_zeroHalf(ccg,ccg_aux,2);
+    /*ccg = initial_runGPU(ccg, ccg_aux, maxContraints,maxDenominator,p,type,nThreads,nBlocks);
+    //printf("depois fase 1: %d\n",ccg->numberConstrains);
+    if(n_cuts!=ccg->numberConstrains)
+        ccg_aux = reallocCut(ccg,ccg_aux, &contr1);
+    n_cuts = ccg->numberConstrains;
+
+    if(nRuns < 0.7*(nBlocks*nThreads))
+    {
+        nThreads = (nRuns/nBlocks) ;
+    }
+    else
+    {
+        aux = (float)(nRuns - 0.7*(nThreads*nBlocks))/(float)(0.7*(nThreads*nBlocks));
+        nRepeat += ceil(aux);
+        nThreads = (0.7*(nThreads*nBlocks))/nBlocks;
+    }
+    for(i = 1; i <= nRepeat; i++)
+    {
+        if((nRepeat>1)&&(i == nRepeat))
+        {
+            nThreads = (nRuns - (nThreads*nBlocks)*(i-1))/nBlocks;
         }
-        for(i = 1; i <= nRepeat;i++){
-            if((nRepeat>1)&&(i == nRepeat)){
-                nThreads = (nRuns - (nThreads*nBlocks)*(i-1))/nBlocks;
-            }
-            nRuns_temp =  nThreads*nBlocks;
-            ccg = second_phase_runGPU(ccg, ccg_aux, maxContraints,nRuns_temp,maxDenominator,p, nBlocks, nThreads, &pos_R1, szR);
-                //printf("depois fase 2: %d - %d\n",ccg->numberConstrains, pos_R1);
-            //if(n_cuts!=ccg->numberConstrains)
-            //    ccg_aux = reallocCutR2(ccg,ccg_aux,&contr2);
-            //cont_run+= nRuns_temp;
-        }
-        ccg_aux = reallocCutR2(ccg,ccg_aux,&contr2);
-        //ccg = phase_zeroHalf(ccg, ccg_aux,2);
-#else
-        printf("CPU\n");
-        printf("Number Contraints: %d\n",ccg->numberConstrains);
-#endif // __NVCC__
+        nRuns_temp =  nThreads*nBlocks;
+        ccg = second_phase_runGPU(ccg, ccg_aux, maxContraints,nRuns_temp,maxDenominator,p, nBlocks, nThreads, &pos_R1, szR);
+        //printf("depois fase 2: %d - %d\n",ccg->numberConstrains, pos_R1);
+        //if(n_cuts!=ccg->numberConstrains)
+        //    ccg_aux = reallocCutR2(ccg,ccg_aux,&contr2);
+        //cont_run+= nRuns_temp;
+    }
+    ccg_aux = reallocCutR2(ccg,ccg_aux,&contr2);
+    //ccg = phase_zeroHalf(ccg, ccg_aux,2);
 
-        gettimeofday(&stop, NULL);
-        double secs = (double)(stop.tv_usec - start.tv_usec) / 1000000 + (double)(stop.tv_sec - start.tv_sec);
-        printf("took %f\n", secs);
 
-        lp = InsertCutsInLP(lp,ccg,ccg_aux,inst);
-        lp_set_max_seconds(lp,10);
-        int yy = lp_optimize_as_continuous(lp);
-        //updateXAstherisc(ccg,ccg_aux,lp,p);
+    gettimeofday(&stop, NULL);
+    double secs = (double)(stop.tv_usec - start.tv_usec) / 1000000 + (double)(stop.tv_sec - start.tv_sec);
+    printf("took %f\n", secs);
 
-        //yy = lp_optimize(lp);
-        //x++;
+    lp = InsertCutsInLP(lp,ccg,ccg_aux,inst);
+    lp_set_max_seconds(lp,10);
+    int yy = lp_optimize_as_continuous(lp);
+    //updateXAstherisc(ccg,ccg_aux,lp,p);
 
+    //yy = lp_optimize(lp);
+    //x++;
+*/
     lp_free(&lp);
 
     free(ccg_aux);
     free(ccg);
-
+    free(inst);
     //free(col);
     return 0;
 }
