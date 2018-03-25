@@ -254,6 +254,7 @@ __global__ void runGPU_zeroHalf(Cut_gpu *d_cut, listNeigh *d_list, int  *d_Solut
     int violation = 0, c1_best = -1,c2_best = -1;
     for(i = term*szPerThreads; i < (term + 1)*szPerThreads; i++)
     {
+        value_tes = 0;
         memset(Coef,0,sizeof(int)*d_cut->numberVariables);
         rhs = 0;
         if(i >= d_list->nList )
@@ -287,13 +288,14 @@ __global__ void runGPU_zeroHalf(Cut_gpu *d_cut, listNeigh *d_list, int  *d_Solut
         rhs += d_cut->rightSide[c2];
         for(j=0; j<d_cut->numberVariables; j++)
         {
-            aux = Coef[j]<0 ? Coef[j]/2 - 1 : Coef[j]/2;
+            aux = Coef[j]<0 ? (Coef[j]/2) - 1 : Coef[j]/2;
             value_tes += aux*d_cut->xAsterisc[j];
         }
         aux = rhs<0 ? rhs/2-1 : rhs/2;
         if((value_tes>aux*precision)&&(value_tes-(aux*precision)>violation))
         {
             violation = value_tes-(aux*precision);
+            //printf("violation in gpu: %d\n", violation);
             c1_best = c1;
             c2_best = c2;
         }

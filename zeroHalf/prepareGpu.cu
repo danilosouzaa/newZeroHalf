@@ -489,17 +489,34 @@ Cut_gpu* phase_zeroHalf(Cut_gpu *h_cut, Cut_gpu_aux *cut_aux,int nConstraintsPer
         h_cut->typeConstraints = (TTypeConstraints*)(h_cut->xAsterisc+ (h_cut->numberVariables));
         gpuMemcpy(h_solution_zero, d_solution_zero, sizeof(int)*nConstraintsPerSet*nBlocks*nThreads, cudaMemcpyDeviceToHost);
 
-
+        gpuFree(d_cut);
+        gpuFree(d_solution_zero);
+        gpuFree(d_list);
+        free(zero_list);
         for(i = 0; i< nBlocks*nThreads;i++){
             if(h_solution_zero[i*2]!=-1){
                 n_cuts++;
             }
         }
-        printf("Num cuts zeroHalf: %d\n", n_cuts);
-        gpuFree(d_cut);
-        gpuFree(d_solution_zero);
-        gpuFree(d_list);
-        free(h_solution_zero);
+
+        if(n_cuts>0){
+            Cut_gpu *out_h_cut;
+            out_h_cut = createCutsOfZeroHalf(h_cut,cut_aux,h_solution_zero,n_cuts,precision,nThreads,nBlocks,nConstraintsPerSet);
+            printf("Num cuts zeroHalf: %d\n", n_cuts);
+            free(h_solution_zero);
+            free(h_cut);
+            return (out_h_cut);
+                        //incluir o create cuts zeroHalf
+
+        }else{
+            printf("NO cuts zeroHalf.\n");
+            free(h_solution_zero);
+            return (h_cut);
+
+        }
+
+
+
 
     }
 
