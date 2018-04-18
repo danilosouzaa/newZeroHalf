@@ -93,7 +93,8 @@ int main(int argc, char *argv[])
     printf("nThreads: %d , nBlocks: %d \n", nThreads, nBlocks);
     n_cuts= ccg->numberConstrains;
     //printf("antes: %d\n",ccg->numberConstrains);
-    ccg= phase_zeroHalf(ccg,ccg_aux,2, p);
+    ccg= phase_zeroHalf_2(ccg,ccg_aux,maxContraints,nRuns, p);
+    //ccg= phase_zeroHalf(ccg,ccg_aux,2, p);
     /*ccg = initial_runGPU(ccg, ccg_aux, maxContraints,maxDenominator,p,type,nThreads,nBlocks);
     //printf("depois fase 1: %d\n",ccg->numberConstrains);
     if(n_cuts!=ccg->numberConstrains)

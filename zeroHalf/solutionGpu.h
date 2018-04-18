@@ -50,6 +50,8 @@ Cut_gpu* createCutsOfPhaseTwo(Cut_gpu *h_cut, Cut_gpu_aux *cut_aux, solutionGpu 
 
 Cut_gpu* createCutsOfZeroHalf(Cut_gpu *h_cut, Cut_gpu_aux *cut_aux, int *h_solution, int nCuts, int precision, int nThreads,int nBlocks, int szPerSet);
 
+Cut_gpu* createCutsOfZeroHalf_2(Cut_gpu *h_cut, Cut_gpu_aux *cut_aux, int *h_solution, int nCuts, int precision, int nThreads,int nBlocks, int szPerSet);
+
 int CutP_maxDivisorCommonVector(int coefs[], int nElem);
 
 int CutP_maxDivisorCommonRec(int m, int n);

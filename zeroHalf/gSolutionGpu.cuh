@@ -11,6 +11,7 @@
 #include "gpulib/gpu.cuh"
 #include <curand.h>
 #include <curand_kernel.h>
+#include <vector>
 
 extern "C" {
 
@@ -27,6 +28,8 @@ __global__ void runGPUR1(Cut_gpu *d_cut, solutionGpu *d_solution, unsigned int *
 __global__ void runGPUR1_aleatory(Cut_gpu *d_cut, solutionGpu *d_solution, unsigned int *seed, curandState_t* states, int nThreads, int precision, int maxDenominator);
 
 __global__ void runGPU_zeroHalf(Cut_gpu *d_cut, listNeigh *d_list, int  *d_Solution, int szPerThreads,int nThreads, int precision);
+
+__global__ void runGPU_zeroHalf_2(Cut_gpu *d_cut, int *d_Solution, unsigned int *seed, curandState_t* states, int szPerThreads, int nThreads, int precision, int nConst);
 
 __global__ void runGPUR2(Cut_gpu *d_cut, solutionGpu *d_solution, unsigned int *seed, curandState_t* states, int numberMaxConst, int setConstraint[],int nThreads, int precision, int maxDenominator,int nRuns);
 #endif /* GSOLUTION_CUH_ */

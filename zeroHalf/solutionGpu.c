@@ -690,6 +690,213 @@ Cut_gpu* createCutsOfZeroHalf(Cut_gpu *h_cut, Cut_gpu_aux *cut_aux, int *h_solut
 
 }
 
+Cut_gpu* createCutsOfZeroHalf_2(Cut_gpu *h_cut, Cut_gpu_aux *cut_aux, int *h_solution, int nCuts, int precision, int nThreads,int nBlocks, int szPerSet)
+{
+    int i,j,el,aux,c1, c2, rhs, mdc, tam = 0,lhs = 0, n1,d1 ;
+    int *Coef1 = (int*)malloc(sizeof(int)*(h_cut->numberVariables));
+    int *v_aux = (int*)malloc(sizeof(int)*(h_cut->numberVariables + 1));
+    Cut_gpu *cuts_generated;
+
+    int *Coefs_temp = (int*)malloc(sizeof(int)*(nCuts*h_cut->numberVariables));
+    int *Elements_temp = (int*)malloc(sizeof(int)*(nCuts*h_cut->numberVariables));
+    int *Pos_el_temp = (int*)malloc(sizeof(int)*(nCuts+1) );
+    int *rhs_temp = (int*)malloc(sizeof(int)*(nCuts));
+    int cont_aux = 0, c_aux = 0;
+    memset(v_aux,0,sizeof(int)*(h_cut->numberVariables+1));
+    double *violation = (double*)malloc(sizeof(double)*nCuts);
+    Pos_el_temp[0] = 0;
+    int ite;
+
+
+    for(i=0; i<nThreads*nBlocks; i++)
+    {
+        if(h_solution[i*szPerSet]!=-1)
+        {
+            aux = 0;
+            rhs = 0;
+            tam = 0;
+            lhs = 0;
+            violation[c_aux] = 0;
+            memset(Coef1,0,sizeof(int)*h_cut->numberVariables);
+            for(ite=0; ite<szPerSet; ite++)
+            {
+                for(j = h_cut->ElementsConstraints[h_solution[i*szPerSet+ ite] ]; j< h_cut->ElementsConstraints[ h_solution[i*szPerSet+ ite] + 1]; j++)
+                {
+                    el = h_cut->Elements[j];
+                    Coef1[el] += h_cut->Coefficients[j];
+                }
+                rhs += h_cut->rightSide[ h_solution[i*szPerSet+ ite] ] ;
+            }
+            for(j=0; j<h_cut->numberVariables; j++)
+            {
+                if(Coef1[j]<0)
+                {
+                    Coef1[j] = (Coef1[j]/2) - 1;
+                }
+                else
+                {
+                    Coef1[j] = Coef1[j]/2;
+                }
+                lhs+= Coef1[j]*h_cut->xAsterisc[j];
+
+                if(Coef1[j]!=0)
+                {
+                    v_aux[tam] = Coef1[j];
+                    tam++;
+                }
+
+            }
+            if(rhs < 0 )
+            {
+                rhs = (rhs/2) - 1;
+            }
+            else
+            {
+                rhs = rhs/2;
+            }
+            violation[c_aux] = lhs - (rhs*precision);
+            v_aux[tam] = rhs;
+            tam++;
+            mdc = CutP_maxDivisorCommonVector(v_aux, tam);
+            for(j=0; j<h_cut->numberVariables; j++)
+            {
+                if(Coef1[j]!=0)
+                {
+                    Coefs_temp[cont_aux] = Coef1[j]/mdc;
+                    //printf("%d\t",Coefs_temp[cont_aux]);
+                    Elements_temp[cont_aux] = j;
+                    cont_aux++;
+                }
+            }
+            Pos_el_temp[c_aux+1] = cont_aux;
+            rhs_temp[c_aux] = rhs/mdc;
+            c_aux++;
+        }
+    }
+    cuts_generated = AllocationStructCut(h_cut->cont+cont_aux, h_cut->numberConstrains + nCuts,h_cut->numberVariables);
+    for(i=0; i<cuts_generated->numberVariables; i++)
+    {
+        cuts_generated->xAsterisc[i] = h_cut->xAsterisc[i];
+    }
+    cuts_generated->ElementsConstraints[0] = 0;
+    for(i=0; i<h_cut->numberConstrains; i++)
+    {
+        cuts_generated->rightSide[i] = h_cut->rightSide[i];
+        cuts_generated->typeConstraints[i] = h_cut->typeConstraints[i];
+        cuts_generated->ElementsConstraints[i+1] = h_cut->ElementsConstraints[i+1];
+    }
+    aux = 1;
+
+    for(i = h_cut->numberConstrains; i<cuts_generated->numberConstrains; i++)
+    {
+
+        cuts_generated->rightSide[i] = rhs_temp[i - h_cut->numberConstrains];
+        cuts_generated->typeConstraints[i] = LPC_ZERO_HALF;
+        cuts_generated->ElementsConstraints[i+1] = Pos_el_temp[aux] + h_cut->cont;
+        aux++;//+ h_cut->cont;
+    }
+    for(i=0; i<h_cut->cont; i++)
+    {
+        cuts_generated->Coefficients[i] = h_cut->Coefficients[i];
+        cuts_generated->Elements[i] = h_cut->Elements[i];
+    }
+    for(i= h_cut->cont; i<cuts_generated->cont; i++)
+    {
+        cuts_generated->Coefficients[i] = Coefs_temp[i - h_cut->cont];
+        cuts_generated->Elements[i] = Elements_temp[i - h_cut->cont];
+    }
+
+    free(Coefs_temp);
+    free(Elements_temp);
+    free(Pos_el_temp);
+    free(rhs_temp);
+
+    int *validated = (int*)malloc(sizeof(int)*cuts_generated->numberConstrains);
+    memset(validated,0,sizeof(int)*cuts_generated->numberConstrains);
+    aux = 1;
+    cont_aux=0;
+    int k,p1,p2, minus_elements = 0;
+    for(i=0; i<cuts_generated->numberConstrains - 1; i++)
+    {
+        for(j=i+1; j<cuts_generated->numberConstrains; j++)
+        {
+            if(validated[j]==0)
+            {
+                if((cuts_generated->ElementsConstraints[i+1]-cuts_generated->ElementsConstraints[i])!=(cuts_generated->ElementsConstraints[j+1]-cuts_generated->ElementsConstraints[j])||(cuts_generated->rightSide[i]!=cuts_generated->rightSide[j]))
+                {
+                    aux=0;
+                }
+                else
+                {
+                    p1 = cuts_generated->ElementsConstraints[i];
+                    p2 = cuts_generated->ElementsConstraints[j];
+                    aux = 1;
+                    for(k=0; k<cuts_generated->ElementsConstraints[i+1]-cuts_generated->ElementsConstraints[i]; k++)
+                    {
+
+                        if((cuts_generated->Coefficients[p1+k]!=cuts_generated->Coefficients[p2+k])||(cuts_generated->Elements[p1+k]!=cuts_generated->Elements[p2+k]))
+                        {
+                            aux=0;
+
+                            break;
+                        }
+                    }
+                }
+                if((aux==1)&&(j >= h_cut->numberConstrains))
+                {
+                    validated[j]=1;
+                    minus_elements += cuts_generated->ElementsConstraints[j+1]-cuts_generated->ElementsConstraints[j];
+                    cont_aux++;
+                }
+            }
+        }
+    }
+
+    printf("Number of repeat: %d \n", cont_aux);
+    Cut_gpu* new_h_cut;
+
+    new_h_cut = AllocationStructCut(cuts_generated->cont - minus_elements,cuts_generated->numberConstrains-cont_aux,cuts_generated->numberVariables);
+    aux = 0;
+    cont_aux = 0;
+    new_h_cut->ElementsConstraints[0] = 0;
+    for(i=0; i<cuts_generated->numberConstrains; i++)
+    {
+        if(validated[i]==0)
+        {
+            if(i>=h_cut->numberConstrains)
+            {
+                printf("violation %f\n",violation[i-h_cut->numberConstrains]);
+            }
+            new_h_cut->rightSide[aux] = cuts_generated->rightSide[i];
+            new_h_cut->typeConstraints[aux] = cuts_generated->typeConstraints[i];
+            for(j = cuts_generated->ElementsConstraints[i]; j < cuts_generated->ElementsConstraints[i+1]; j++)
+            {
+                new_h_cut->Coefficients[cont_aux] = cuts_generated->Coefficients[j];
+                new_h_cut->Elements[cont_aux] = cuts_generated->Elements[j];
+                cont_aux++;
+            }
+            new_h_cut->ElementsConstraints[aux + 1] = cont_aux;
+
+            aux++;
+        }
+
+    }
+    for(i=0; i<new_h_cut->numberVariables; i++)
+    {
+        new_h_cut->xAsterisc[i] = cuts_generated->xAsterisc[i];
+    }
+
+
+    free(violation);
+    free(validated);
+    free(cuts_generated);
+
+    free(Coef1);
+    free(v_aux);
+    return new_h_cut;
+
+}
+
 
 Cut_gpu_aux* reallocCut(Cut_gpu *h_cut,Cut_gpu_aux *h_cut_aux, int *cont)
 {

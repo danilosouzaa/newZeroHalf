@@ -26,6 +26,8 @@ Cut_gpu* second_phase_runGPU(Cut_gpu *h_cut, Cut_gpu_aux *cut_aux, int numberMax
 
 Cut_gpu* phase_zeroHalf(Cut_gpu *h_cut, Cut_gpu_aux *cut_aux,int nConstraintsPerSet,int precision);
 
+Cut_gpu* phase_zeroHalf_2(Cut_gpu *h_cut,Cut_gpu_aux *cut_aux, int nConst, int nRuns, int precision);
+
 listNeigh *returnListNeighborhood (Cut_gpu *h_cut);
 
 int contPar(Cut_gpu* h_cut);

@@ -438,8 +438,8 @@ Cut_gpu* phase_zeroHalf(Cut_gpu *h_cut, Cut_gpu_aux *cut_aux,int nConstraintsPer
 {
     //char *matrixNeighborhood;
     int i,j, n_cuts = 0;
-    int szPar = contPar(h_cut);
-    int szImpar = h_cut->numberConstrains -szPar;
+//    int szPar = contPar(h_cut);
+//    int szImpar = h_cut->numberConstrains -szPar;
     //int *vPar = (int*)malloc(sizeof(int)*szPar);
     //int *vImpar = (int*)malloc(sizeof(int)*(szImpar));
     //matrixNeighborhood = returnMatrixNeighborhood(h_cut);
@@ -460,7 +460,7 @@ Cut_gpu* phase_zeroHalf(Cut_gpu *h_cut, Cut_gpu_aux *cut_aux,int nConstraintsPer
     int szPerThreads = zero_list->nList/(nBlocks*nThreads) + 1;
     if(deviceCuda>0)
     {
-         size_t size_cut = sizeof(Cut_gpu) +
+        size_t size_cut = sizeof(Cut_gpu) +
                           sizeof(TCoefficients)*(h_cut->cont) +
                           sizeof(TElements)*(h_cut->cont) +
                           sizeof(TElementsConstraints)*(h_cut->numberConstrains+1) +
@@ -527,6 +527,85 @@ Cut_gpu* phase_zeroHalf(Cut_gpu *h_cut, Cut_gpu_aux *cut_aux,int nConstraintsPer
 
 }
 
+
+Cut_gpu* phase_zeroHalf_2(Cut_gpu *h_cut,Cut_gpu_aux *cut_aux, int nConst, int nRuns, int precision){
+    int i,j, n_cuts = 0;
+    int nBlocks, nThreads;
+    nBlocks = 10;
+    nThreads =  500;//szPar/nBlocks;
+    int deviceCuda;
+    deviceCuda = verifyGpu();
+    int szPerThreads = nRuns/(nBlocks*nThreads) + 1;
+    if(deviceCuda>0)
+    {
+        size_t size_cut = sizeof(Cut_gpu) +
+                          sizeof(TCoefficients)*(h_cut->cont) +
+                          sizeof(TElements)*(h_cut->cont) +
+                          sizeof(TElementsConstraints)*(h_cut->numberConstrains+1) +
+                          sizeof(TRightSide)*(h_cut->numberConstrains) +
+                          sizeof(TXAsterisc)*(h_cut->numberVariables) +
+                          sizeof(TTypeConstraints)*(h_cut->numberConstrains);
+        int *h_solution_zero = (int*)malloc(sizeof(int)*nConst*nBlocks*nThreads);
+        int *d_solution_zero ;
+        cudaMalloc((void**)&d_solution_zero, sizeof(int)*nConst*nBlocks*nThreads);
+        Cut_gpu *d_cut = createGPUcut(h_cut, h_cut->numberVariables, h_cut->numberConstrains);
+        curandState_t *states;
+        cudaMalloc((void**)&states, (nThreads*nBlocks)*sizeof(curandState_t));
+
+        unsigned int *h_seed = (unsigned int*)malloc(sizeof(unsigned int)*(nThreads*nBlocks));
+        unsigned int *d_seed;
+        srand(time(NULL));
+        for(i=0; i<(nThreads*nBlocks); i++)
+        {
+            h_seed[i] = rand()%100000;
+        }
+        gpuMalloc((void**)&d_seed, sizeof(unsigned int)*(nThreads*nBlocks));
+        gpuMemcpy(d_seed, h_seed, sizeof(unsigned int)*(nThreads*nBlocks), cudaMemcpyHostToDevice);
+        runGPU_zeroHalf_2<<<nBlocks,nThreads>>>(d_cut,d_solution_zero, d_seed, states, szPerThreads,nThreads,precision,nConst);
+        gpuDeviceSynchronize();
+
+        gpuMemcpy(h_cut, d_cut, size_cut, cudaMemcpyDeviceToHost);
+        h_cut->Coefficients = (TCoefficients*)(h_cut + 1);
+        h_cut->Elements = (TElements*)(h_cut->Coefficients + (h_cut->cont));
+        h_cut->ElementsConstraints = (TElementsConstraints*)(h_cut->Elements + (h_cut->cont));
+        h_cut->rightSide = (TRightSide*)(h_cut->ElementsConstraints+ (h_cut->numberConstrains+1));
+        h_cut->xAsterisc = (TXAsterisc*)(h_cut->rightSide + (h_cut->numberConstrains));
+        h_cut->typeConstraints = (TTypeConstraints*)(h_cut->xAsterisc+ (h_cut->numberVariables));
+        gpuMemcpy(h_solution_zero, d_solution_zero, sizeof(int)*nConst*nBlocks*nThreads, cudaMemcpyDeviceToHost);
+
+        gpuFree(d_cut);
+        gpuFree(d_solution_zero);
+        gpuFree(d_seed);
+        gpuFree(states);
+        free(h_seed);
+        for(i = 0; i< nBlocks*nThreads;i++){
+            if(h_solution_zero[i*nConst]!=-1){
+                n_cuts++;
+            }
+        }
+        if(n_cuts>0){
+            Cut_gpu *out_h_cut;
+            out_h_cut = createCutsOfZeroHalf_2(h_cut,cut_aux,h_solution_zero,n_cuts,precision,nThreads,nBlocks,nConst);
+            printf("Num cuts zeroHalf: %d\n", n_cuts);
+            free(h_solution_zero);
+            free(h_cut);
+            return (out_h_cut);
+//                        //incluir o create cuts zeroHalf
+        }else{
+           printf("NO cuts zeroHalf.\n");
+           free(h_solution_zero);
+           return (h_cut);
+
+        }
+
+
+
+
+    }
+
+
+
+}
 void fillParImpar(int *vPar,int *vImpar, Cut_gpu *h_cut)
 {
     int i, cP=0, cI = 0;

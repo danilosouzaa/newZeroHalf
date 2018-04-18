@@ -248,7 +248,6 @@ __global__ void runGPUR1_aleatory(Cut_gpu *d_cut, solutionGpu *d_solution, unsig
 __global__ void runGPU_zeroHalf(Cut_gpu *d_cut, listNeigh *d_list, int  *d_Solution, int szPerThreads,int nThreads, int precision)
 {
     int term = threadIdx.x + blockIdx.x*nThreads;
-
     int i,j, cont = 0, c1, c2,el,rhs = 0, aux, value_tes;
     int *Coef = (int*)malloc(sizeof(int)*(d_cut->numberVariables));
     int violation = 0, c1_best = -1,c2_best = -1;
@@ -307,6 +306,118 @@ __global__ void runGPU_zeroHalf(Cut_gpu *d_cut, listNeigh *d_list, int  *d_Solut
     d_Solution[term*2+1] = c2_best;
     free(Coef);
     //printf("%d: %d\n",blockIdx.x, szPerThreads);
+}
+
+
+__device__ void shuffle_constraints(int *constraints, int sz, unsigned int *seed, curandState_t* states, int term)
+{
+    curand_init(seed[term],term,0,&states[term]);
+    //printf("number: %d\n", sz);
+    int i, j, t;
+    if (sz > 1)
+    {
+
+        for (i = sz - 1; i > 0 ; i--)
+        {
+            j = curand(&states[term])%(i+1);
+            t = constraints[j];
+            constraints[j] = constraints[i];
+            constraints[i] = t;
+        }
+    }
+}
+
+__global__ void runGPU_zeroHalf_2(Cut_gpu *d_cut, int *d_Solution, unsigned int *seed, curandState_t* states, int szPerThreads, int nThreads, int precision, int nConst)
+{
+    int term = threadIdx.x + blockIdx.x*nThreads;
+    int i,j, cont = 0, el, aux, value_tes, ite;
+    int *Coef = (int*)malloc(sizeof(int)*(d_cut->numberVariables));
+    int violation = 0, c1_best = -1,c2_best = -1;
+    int *c_best  = (int*)malloc(sizeof(int)*nConst);
+    int *c  = (int*)malloc(sizeof(int)*nConst);
+    int *constraints = (int*)malloc(sizeof(int)*d_cut->numberConstrains);
+    int rhs_t = 0;
+    for(i=0;i<nConst;i++){
+        c_best[i] = -1;
+    }
+
+
+    for(i=0; i<d_cut->numberConstrains; i++)
+    {
+        constraints[i] = i;
+    }
+    for(ite = 0 ; ite < szPerThreads; ite ++)
+    {
+        rhs_t = 0;
+        value_tes = 0;
+        shuffle_constraints(constraints,d_cut->numberConstrains,seed,states,term);
+        curand_init(seed[term],term,0,&states[term]);
+        j = curand(&states[term])%d_cut->numberConstrains;
+        for(i=0; i<nConst-1; i++)
+        {
+            aux = (j+i)%d_cut->numberConstrains;
+            //printf("aux: %d\n",aux);
+            c[i] = constraints[aux];
+            rhs_t += d_cut->rightSide[ c[i] ];
+            //printf("c = %d , rhs: %d\n", c[i],rhs_t);
+        }
+        if(rhs_t%2==0)
+        {
+            do
+            {
+                aux = (aux + 1)%d_cut->numberConstrains;
+            }
+            while(d_cut->rightSide[constraints[aux]]%2 == 0);
+
+            c[i] = constraints[aux];
+
+        }
+        else
+        {
+            do
+            {
+                aux = (aux + 1)%d_cut->numberConstrains;
+            }
+            while(d_cut->rightSide[constraints[aux]]%2 == 1);
+            c[i] = constraints[aux];
+        }
+        rhs_t += d_cut->rightSide[ c[i] ];
+        //printf("aux: %d\n",aux);
+        memset(Coef,0,sizeof(int)*d_cut->numberVariables);
+        for(i=0; i<nConst; i++)
+        {
+            for(j = d_cut->ElementsConstraints[ c[i] ]; j<d_cut->ElementsConstraints[ c[i] + 1]; j++)
+            {
+                el = d_cut->Elements[j];
+                Coef[el] += d_cut->Coefficients[j];
+            }
+        }
+        for(j=0; j<d_cut->numberVariables; j++)
+        {
+            aux = Coef[j]<0 ? (Coef[j]/2) - 1 : Coef[j]/2;
+            value_tes += aux*d_cut->xAsterisc[j];
+        }
+        aux = rhs_t<0 ? (rhs_t/2)-1 : rhs_t/2;
+        if((value_tes>aux*precision)&&(value_tes-(aux*precision)>violation))
+        {
+            violation = value_tes-(aux*precision);
+            //printf("violation in gpu: %d\n", violation);
+            for(i=0; i<nConst; i++)
+            {
+                c_best[i] = c[i];
+            }
+        }
+    }
+    __syncthreads();
+    for(i=0; i<nConst; i++)
+    {
+        d_Solution[term*nConst + i] = c_best[i];
+    }
+
+    free(c);
+    free(Coef);
+    free(c_best);
+    free(constraints);
 }
 
 __global__ void runGPUR2(Cut_gpu *d_cut, solutionGpu *d_solution, unsigned int *seed, curandState_t* states, int numberMaxConst, int setConstraint[],int nThreads, int precision, int maxDenominator, int nRuns)
